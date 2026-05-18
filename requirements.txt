@@ -1,0 +1,4 @@
+# Root requirements for developer helpers (local use)
+# Install to enable the dataset download helper script.
+
+kaggle>=1.5.12
