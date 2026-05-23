@@ -8,7 +8,7 @@
 | Periodo | 2026-1 |
 | Actividad | 2 — Proyecto integrador (35% nota final) |
 | Dataset | [Heart Failure Prediction — Kaggle](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction) |
-| Autores | Cristian David Ocampo Uribe | Juanita Solórzano Salazar
+| Autores | Cristian David Ocampo Uribe y Juanita Solórzano Salazar |
 
 ---
 
