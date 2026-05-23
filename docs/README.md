@@ -8,6 +8,136 @@
 | Periodo | 2026-1 |
 | Actividad | 2 — Proyecto integrador (35% nota final) |
 | Dataset | [Heart Failure Prediction — Kaggle](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction) |
+| Autores | Cristian David Ocampo Uribe | Juanita Solórzano Salazar
+
+---
+
+## ⚡ GUÍA RÁPIDA DE EJECUCIÓN (Paso a Paso)
+
+### Paso 0: Verificar requisitos
+```bash
+# Verificar que Docker y Docker Compose están instalados
+docker --version
+docker compose --version
+```
+
+### Paso 1: Descargar el Dataset
+
+El dataset **no está incluido** en el repositorio. Debes descargarlo antes de ejecutar. Elige una opción:
+
+#### **Opción A — Descarga manual (RECOMENDADO - más fácil)**
+1. Ve a: https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction
+2. Haz clic en **Download** (requiere crear cuenta Kaggle gratuita si no la tienes)
+3. Descomprime el ZIP descargado
+4. Copia el archivo **`heart.csv`** a la carpeta **`data/`** del proyecto
+5. Verifica:
+   ```bash
+   ls -la data/heart.csv
+   ```
+
+#### Opción B — Usando CLI de Kaggle
+```bash
+# 1. Instalar Kaggle CLI
+pip install kaggle
+
+# 2. Generar token: https://www.kaggle.com/settings/account
+#    Descargar kaggle.json y copiarlo a ~/.kaggle/kaggle.json
+chmod 600 ~/.kaggle/kaggle.json
+
+# 3. Descargar dataset
+kaggle datasets download -d fedesoriano/heart-failure-prediction -p data/ --unzip
+
+# 4. Verificar
+ls data/heart.csv
+```
+
+#### Opción C — Script automático
+```bash
+pip install -r requirements.txt
+python scripts/download_dataset.py
+```
+
+**✓ Verificación final:**
+```bash
+head -3 data/heart.csv
+# Debe mostrar las columnas: Age,Sex,ChestPainType,RestingBP,...
+```
+
+---
+
+### Paso 2: Levantar los servicios (Primera ejecución)
+
+**En la terminal, en la raíz del proyecto:**
+
+```bash
+# Navegar al directorio
+cd /ruta/al/Kafkamed
+
+# Construir imágenes y levantar todos los servicios
+docker compose -f infra/docker-compose.yml up --build
+```
+
+**¿Qué sucede automáticamente?**
+- ✅ Kafka inicia en modo KRaft (30 segundos aprox)
+- ✅ MongoDB se levanta y está listo
+- ✅ Producer comienza a publicar registros cada 1 segundo
+- ✅ Spark lee del topic, aplica modelo ML y guarda en MongoDB
+- ✅ API Flask queda disponible en `http://localhost:5000`
+
+---
+
+### Paso 3: Verificar que todo funciona
+
+**Abre otra terminal y ejecuta:**
+
+```bash
+# 1. Ver logs del producer en vivo
+docker compose -f infra/docker-compose.yml logs -f producer
+
+# 2. En otra terminal, probar la API (esperar 30 segundos después de iniciar)
+curl http://localhost:5000/stats
+
+# 3. Obtener lista de pacientes procesados
+curl "http://localhost:5000/patients?limit=5"
+
+# 4. Resumen de alertas
+curl http://localhost:5000/risk-summary
+```
+
+**Si ves datos en respuesta → ¡Todo funciona! ✓**
+
+---
+
+### Paso 4: (Opcional) Conectar Power BI
+
+Ver sección **8. Dashboard Power BI** más abajo.
+
+---
+
+### Paso 5: Detener los servicios
+
+```bash
+# Detener sin perder datos
+docker compose -f infra/docker-compose.yml down
+
+# O limpiar completamente (borra datos de Kafka y MongoDB)
+docker compose -f infra/docker-compose.yml down -v
+```
+
+---
+
+## 🔄 Para ejecuciones posteriores
+
+Una vez verificado que funciona, **no necesitas reconstruir las imágenes:**
+
+```bash
+# Solo levantar servicios existentes
+docker compose -f infra/docker-compose.yml up
+
+# Ver logs de un servicio específico
+docker compose -f infra/docker-compose.yml logs -f spark
+docker compose -f infra/docker-compose.yml logs -f api
+```
 
 ---
 
@@ -35,163 +165,81 @@ heart.csv
     └──────────────────────────────────────────────────────────────────────┘
 ```
 
+**Flujo de datos:**
+1. **Producer** lee `heart.csv` y publica registros en Kafka
+2. **Spark** consume del topic en tiempo real
+3. **ML Model** predice riesgo cardíaco para cada paciente
+4. **MongoDB** almacena predicciones con timestamp
+5. **API Flask** expone endpoints para consultas
+6. **Power BI** visualiza métricas y alertas
+
 ---
 
 ## 2. Estructura del repositorio
 
 ```
-KafkaMed/
+Kafkamed/
 ├── producer/
-│   ├── producer.py             # Productor Kafka
-│   ├── requirements.txt        # kafka-python
-│   └── Dockerfile
+│   ├── producer.py             # Publica registros en Kafka
+│   ├── Dockerfile              # Imagen Docker
+│   └── requirements.txt        # kafka-python
+│
 ├── spark/
-│   ├── consumer_spark.py       # Consumidor Structured Streaming + ML
-│   ├── requirements.txt        # pyspark, pymongo
-│   └── Dockerfile
+│   ├── consumer_spark.py       # Consume Kafka + ML + MongoDB
+│   ├── train_and_evaluate.py   # Entrena modelo RandomForest
+│   ├── Dockerfile              # Imagen Docker
+│   └── requirements.txt        # pyspark, pymongo
+│
 ├── api/
 │   ├── app.py                  # API REST Flask (4 endpoints)
-│   ├── requirements.txt        # flask, pymongo
-│   └── Dockerfile
+│   ├── Dockerfile              # Imagen Docker
+│   └── requirements.txt        # flask, pymongo
+│
 ├── data/
-│   └── heart.csv               # ← debes colocar aquí el dataset de Kaggle
-├── docker-compose.yml
-└── README.md
+│   ├── heart.csv               # ← Dataset (debes descargarlo)
+│   ├── checkpoint/             # Checkpoints de Spark Streaming
+│   ├── model_rf/               # Modelo RandomForest entrenado
+│   └── model_nb/               # (Opcional) Naive Bayes
+│
+├── infra/
+│   ├── docker-compose.yml      # Orquestación de servicios
+│   └── Jenkinsfile             # CI/CD
+│
+├── scripts/
+│   └── download_dataset.py     # Helper para descargar dataset
+│
+└── docs/
+    ├── README.md               # Este archivo
+    └── metrics.json            # Métricas del modelo
 ```
 
 ---
 
-## 3. Descarga del dataset (paso obligatorio antes de correr el proyecto)
+## 3. Variables de entorno de referencia
 
-El dataset **no se incluye en el repositorio** porque está bajo licencia Kaggle. Sigue uno de estos métodos:
-
-### Método A — Kaggle CLI (recomendado)
-
-```bash
-# 1. Instala la CLI de Kaggle si no la tienes
-pip install kaggle
-
-# 2. Descarga tu archivo kaggle.json desde:
-#    https://www.kaggle.com/settings  →  "Create New Token"
-#    Ubícalo en ~/.kaggle/kaggle.json
-
-# 3. Descarga y descomprime el dataset
-kaggle datasets download -d fedesoriano/heart-failure-prediction
-unzip heart-failure-prediction.zip -d data/
-# El archivo resultante se llama heart.csv — ya está en data/
-```
-
-### Método B — Descarga manual
-
-1. Ve a: `https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction`
-2. Haz clic en **Download** (requiere cuenta Kaggle gratuita).
-3. Descomprime el ZIP y copia `heart.csv` dentro de la carpeta `data/` del proyecto.
-
-### Verificación
-
-```bash
-head -3 data/heart.csv
-# Debe mostrar:
-# Age,Sex,ChestPainType,RestingBP,Cholesterol,FastingBS,RestingECG,MaxHR,ExerciseAngina,Oldpeak,ST_Slope,HeartDisease
-# 40,M,ATA,140,289,0,Normal,172,N,0,Up,0
-# 49,F,NAP,160,180,0,Normal,156,N,1,Flat,1
-```
+| Variable | Valor por defecto | Descripción |
+|---|---|---|
+| `KAFKA_BOOTSTRAP` | `kafka:29092` | Broker Kafka (listener Docker) |
+| `KAFKA_TOPIC` | `heart-records` | Topic de registros |
+| `CSV_PATH` | `/app/data/heart.csv` | Ruta del dataset |
+| `INTERVAL` | `1.0` | Segundos entre mensajes |
+| `MONGO_URI` | `mongodb://mongo:27017` | Conexión MongoDB |
+| `MONGO_DB` | `kafkamed` | Base de datos |
+| `MONGO_COLLECTION` | `predictions` | Colección de predicciones |
+| `MODEL_PATH` | `/app/data/model_rf` | Ruta modelo ML |
+| `CHECKPOINT_DIR` | `/app/data/checkpoint` | Checkpoint Streaming |
 
 ---
 
-## 4. Dockerfiles necesarios
+## 4. Endpoints de la API
 
-Debes crear un `Dockerfile` en cada subcarpeta. Aquí las plantillas:
-
-### producer/Dockerfile
-
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY producer.py .
-CMD ["python", "producer.py"]
-```
-
-### producer/requirements.txt
-
-```
-kafka-python==2.0.2
-```
-
-### spark/Dockerfile
-
-```dockerfile
-FROM apache/spark:3.5.0
-USER root
-RUN pip install pymongo==4.8.0 numpy
-COPY consumer_spark.py /opt/spark/work-dir/
-WORKDIR /opt/spark/work-dir
-```
-
-### spark/requirements.txt
-
-```
-pymongo==4.8.0
-numpy
-```
-
-### api/Dockerfile
-
-```dockerfile
-FROM python:3.10-slim
-WORKDIR /opt/api
-RUN apt-get update && apt-get install -y --no-install-recommends default-jre-headless \
-    && rm -rf /var/lib/apt/lists/*
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py .
-CMD ["python", "app.py"]
-```
-
-### api/requirements.txt
-
-```
-flask==3.0.3
-pymongo==4.8.0
-```
-
----
-
-## 5. Levantar el sistema
+### GET `/patients` — Listado completo de pacientes procesados
 
 ```bash
-# Clonar el repositorio y posicionarse en la raíz
-cd KafkaMed
-
-# Verificar que heart.csv está en data/
-ls data/heart.csv
-
-# Primera ejecución (construye imágenes y levanta todos los servicios)
-docker compose up --build
-
-docker compose -f infra/docker-compose.yml logs --no-color --tail=200 producer
-# Ejecuciones posteriores
-docker compose up
-docker compose -f infra/docker-compose.yml logs --no-color --tail=200 producer
-```
-
-El sistema arranca en este orden gracias a los `healthcheck`:
-1. **Kafka** se inicializa en modo KRaft (~30 s).
-2. **MongoDB** queda listo.
-3. **Producer** empieza a publicar registros cada 1 segundo.
-4. **Spark** lee del topic, aplica el modelo y graba en MongoDB.
-5. **API Flask** queda disponible en `http://localhost:5000`.
-
----
-
-## 6. Endpoints de la API
-
-### GET `/patients` — Listado de pacientes procesados
-
-```bash
+# Todos los pacientes
 curl http://localhost:5000/patients
+
+# Filtrar por riesgo y sexo
 curl "http://localhost:5000/patients?riesgo=alto&sex=M&limit=10"
 ```
 
@@ -201,13 +249,17 @@ curl "http://localhost:5000/patients?riesgo=alto&sex=M&limit=10"
   "total": 10,
   "pacientes": [
     {
-      "_id": "...",
-      "age": 63, "sex": "M", "chest_pain_type": "ASY",
-      "resting_bp": 145, "cholesterol": 233,
+      "_id": "507f1f77bcf86cd799439011",
+      "age": 63,
+      "sex": "M",
+      "chest_pain_type": "ASY",
+      "resting_bp": 145,
+      "cholesterol": 233,
       "prediction_label": "riesgo",
       "probability": 0.91,
       "timestamp": "2026-05-18T14:32:01.123456"
-    }
+    },
+    ...
   ]
 }
 ```
@@ -215,11 +267,14 @@ curl "http://localhost:5000/patients?riesgo=alto&sex=M&limit=10"
 ### GET `/predictions` — Solo campos de predicción
 
 ```bash
+# Todas las predicciones
 curl http://localhost:5000/predictions
+
+# Filtrar por riesgo
 curl "http://localhost:5000/predictions?riesgo=alto&limit=50"
 ```
 
-### GET `/stats` — Métricas globales
+### GET `/stats` — Métricas globales agregadas
 
 ```bash
 curl http://localhost:5000/stats
@@ -229,19 +284,31 @@ curl http://localhost:5000/stats
 ```json
 {
   "total_pacientes": 918,
-  "distribucion_riesgo": { "riesgo": 508, "sin_riesgo": 410 },
+  "distribucion_riesgo": {
+    "riesgo": 508,
+    "sin_riesgo": 410
+  },
   "probabilidad_promedio": 0.7341,
   "distribucion_por_sexo": {
-    "M": { "riesgo": 437, "sin_riesgo": 189 },
-    "F": { "riesgo": 71, "sin_riesgo": 221 }
+    "M": {
+      "riesgo": 437,
+      "sin_riesgo": 189
+    },
+    "F": {
+      "riesgo": 71,
+      "sin_riesgo": 221
+    }
   }
 }
 ```
 
-### GET `/risk-summary` — Resumen ejecutivo para el equipo médico
+### GET `/risk-summary` — Resumen ejecutivo para equipo médico
 
 ```bash
+# Resumen general
 curl http://localhost:5000/risk-summary
+
+# Últimas N alertas
 curl "http://localhost:5000/risk-summary?limit=5"
 ```
 
@@ -250,121 +317,179 @@ curl "http://localhost:5000/risk-summary?limit=5"
 {
   "alertas_activas": 20,
   "promedios_clinicos": {
-    "age": 58.3, "resting_bp": 141.2,
-    "cholesterol": 221.7, "max_hr": 126.4, "oldpeak": 1.8
+    "age": 58.3,
+    "resting_bp": 141.2,
+    "cholesterol": 221.7,
+    "max_hr": 126.4,
+    "oldpeak": 1.8
   },
   "ultimo_procesado": "2026-05-18T14:35:22.001234",
-  "pacientes_alto_riesgo": [ ... ]
+  "pacientes_alto_riesgo": [
+    {
+      "age": 45,
+      "resting_bp": 160,
+      "probability": 0.95,
+      "timestamp": "2026-05-18T14:35:20.123456"
+    },
+    ...
+  ]
 }
 ```
 
 ---
 
-## 7. Dashboard Power BI (4 visualizaciones requeridas)
+## 5. Dashboard Power BI (4 visualizaciones requeridas)
 
-Conecta Power BI a la API Flask usando el conector **Web** (`http://localhost:5000/stats`, etc.) o directamente a MongoDB vía ODBC.
+### Paso a paso para conectar Power BI a la API
+
+1. **Abre Power BI Desktop**
+2. **Obtener datos** → **Web**
+3. **Ingresa URL:** `http://<TU_IP_LOCAL>:5000/patients?riesgo=alto&limit=500`
+4. **Carga los datos**
+5. **Expande la columna** `pacientes` → **A la tabla**
+6. **Normaliza columnas** según sea necesario
+
+### Las 4 visualizaciones requeridas
 
 | # | Visualización | Fuente | Tipo de gráfico |
 |---|---|---|---|
-| 1 | Distribución de riesgo | `/stats` → `distribucion_riesgo` | Gráfico de dona |
-| 2 | Evolución temporal de alertas | `/predictions` → `timestamp` + `prediction_label` | Gráfico de línea |
-| 3 | Variables correlacionadas (edad, colesterol, FC máx por grupo de riesgo) | `/patients` | Gráfico de dispersión / matriz |
-| 4 | Tabla de alertas activas (alto riesgo) | `/risk-summary` → `pacientes_alto_riesgo` | Tabla con formato condicional |
+| 1 | Distribución de riesgo | `/stats` → `distribucion_riesgo` | **Gráfico de dona** |
+| 2 | Evolución temporal de alertas | `/predictions` → `timestamp` + `prediction_label` | **Línea temporal** |
+| 3 | Correlaciones clínicas | `/patients` → edad/colesterol/FC máx vs riesgo | **Dispersión / Matriz** |
+| 4 | Tabla de alertas activas | `/risk-summary` → `pacientes_alto_riesgo` | **Tabla con formato condicional** |
 
-**Paso a paso para conectar Power BI:**
-1. Abre Power BI Desktop → **Obtener datos** → **Web**.
-2. URL: `http://<TU_IP_LOCAL>:5000/patients?riesgo=alto&limit=500`
-3. Expande la columna `pacientes` → **A la tabla** → normaliza columnas.
-4. Repite para `/stats` y `/predictions`.
-5. Crea relaciones entre tablas usando `_id` o `timestamp`.
+**Recomendaciones:**
+- Puedes conectar directamente a MongoDB con ODBC para mayor flexibilidad
+- Usa filtros dinámicos por sexo, rango de edad, tipo de dolor
+- Actualiza los datos cada 5 minutos (opción de Power BI)
 
 ---
 
-## 8. Comandos útiles
+## 6. Comandos útiles para debugging
 
+### Ver logs en tiempo real
 ```bash
-# Ver logs en tiempo real por servicio
-docker compose logs -f producer
-docker compose logs -f spark
-docker compose logs -f api
+# Producer (publica mensajes Kafka)
+docker compose -f infra/docker-compose.yml logs -f producer
 
-# Verificar que Kafka recibe mensajes
-docker exec -it kafkamed_kafka \
-  /opt/kafka/bin/kafka-console-consumer.sh \
+# Spark (procesa y aplica ML)
+docker compose -f infra/docker-compose.yml logs -f spark
+
+# API Flask
+docker compose -f infra/docker-compose.yml logs -f api
+
+# Base de datos
+docker compose -f infra/docker-compose.yml logs -f mongo
+```
+
+### Verificar que Kafka recibe mensajes
+```bash
+docker exec -it Kafkamed-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 \
   --topic heart-records \
   --from-beginning \
   --max-messages 5
+```
 
-# Consultar MongoDB directamente
-docker exec -it kafkamed_mongo mongosh
+### Consultar MongoDB directamente
+```bash
+docker exec -it Kafkamed-mongo-1 mongosh
+
+# Dentro de mongosh:
 use kafkamed
 db.predictions.countDocuments()
 db.predictions.find({ prediction_label: "riesgo" }).limit(3).pretty()
+db.predictions.aggregate([
+  { $group: { _id: "$prediction_label", count: { $sum: 1 } } }
+])
+```
 
-# Detener y limpiar (conserva datos)
-docker compose down
+### Detener y limpiar
+```bash
+# Detener sin borrar datos
+docker compose -f infra/docker-compose.yml down
 
-# Limpiar completamente (borra datos de Kafka y MongoDB)
-docker compose down -v
+# Limpiar completamente (borra bases de datos)
+docker compose -f infra/docker-compose.yml down -v
+
+# Forzar detención
+docker compose -f infra/docker-compose.yml kill
 ```
 
 ---
 
-## 9. Diferencias clave vs Actividad 1 (SentimentStream → KafkaMed)
+## 7. Diferencias clave vs Actividad 1 (SentimentStream → KafkaMed)
 
-| Componente | Actividad 1 (SentimentStream) | Actividad 2 (KafkaMed) |
+| Aspecto | Actividad 1 (SentimentStream) | Actividad 2 (KafkaMed) |
 |---|---|---|
-| Fuente de datos | Socket TCP simple | **Broker Kafka** (topic `heart-records`) |
-| Dominio | Análisis de sentimientos (texto) | **Detección de riesgo cardíaco** (datos tabulares) |
+| Fuente de datos | Socket TCP simple | **Broker Kafka con persistencia** |
+| Dominio | Análisis de sentimientos (texto) | **Diag. cardíaco (datos tabulares)** |
 | Modelo ML | Naive Bayes + TF-IDF | **RandomForest / LogisticRegression** |
-| Colección MongoDB | `sentiments` | `predictions` |
-| Endpoints Flask | `/sentiments`, `/stats`, `/predict` | `/patients`, `/predictions`, `/stats`, `/risk-summary` |
-| Broker | Socket (frágil, 1:1) | **Kafka KRaft** (escalable, persistente, tolerante a fallos) |
-| Garantías de entrega | Ninguna | **at-least-once** (acks=all + checkpoint) |
-| Escalabilidad | Un productor, un consumidor | **N productores, M consumidores** en paralelo |
+| Colección | `sentiments` | `predictions` |
+| Endpoints | `/sentiments`, `/stats` | `/patients`, `/predictions`, `/stats`, `/risk-summary` |
+| Broker | Socket 1:1 (frágil) | **Kafka KRaft (escalable)** |
+| Garantías | Ninguna | **at-least-once** |
+| Scalabilidad | 1 productor ↔ 1 consumidor | **N productores ↔ M consumidores** |
 
-**Por qué Kafka es mejor que un socket simple:**
-- **Persistencia:** los mensajes sobreviven si el consumidor cae; el socket los pierde.
-- **Desacoplamiento:** el productor no necesita saber si el consumidor está activo.
-- **Escalabilidad horizontal:** múltiples particiones permiten consumidores paralelos.
-- **Tolerancia a fallos:** el checkpoint de Spark + el log de Kafka garantizan exactitud.
-
----
-
-## 10. Variables de entorno de referencia
-
-| Variable | Valor por defecto | Descripción |
-|---|---|---|
-| `KAFKA_BOOTSTRAP` | `kafka:29092` | Broker Kafka (listener interno Docker) |
-| `KAFKA_TOPIC` | `heart-records` | Topic de registros cardíacos |
-| `CSV_PATH` | `/app/data/heart.csv` | Ruta del dataset |
-| `INTERVAL` | `1.0` | Segundos entre mensajes del productor |
-| `MONGO_URI` | `mongodb://mongo:27017` | Conexión MongoDB |
-| `MONGO_DB` | `kafkamed` | Base de datos |
-| `MONGO_COLLECTION` | `predictions` | Colección de predicciones |
-| `MODEL_PATH` | `/app/data/model_rf` | Ruta del modelo Spark ML |
-| `CHECKPOINT_DIR` | `/app/data/checkpoint` | Checkpoint de Structured Streaming |
+**¿Por qué Kafka es mejor?**
+- ✅ **Persistencia:** mensajes sobreviven si el consumidor cae
+- ✅ **Desacoplamiento:** productor y consumidor actúan independientemente
+- ✅ **Escalabilidad horizontal:** múltiples particiones para paralelismo
+- ✅ **Garantías de entrega:** checkpoint + offset = exactitud
 
 ---
 
-## 11. Descarga automática del dataset (opcional)
+## 8. Solución de problemas
 
-Si quieres automatizar la descarga de `heart.csv` desde Kaggle, coloca tu `kaggle.json` en `~/.kaggle/kaggle.json` (permiso `600`) y ejecuta el helper:
-
+### El API no responde
 ```bash
-# instalar la dependencia de ayuda (solo para el script local)
-pip install -r requirements.txt
-
-# descargar y descomprimir en ./data/
-python scripts/download_dataset.py
+# Esperar 30-40 segundos después de iniciar (Kafka tarda en arrancar)
+# Ver logs de Spark:
+docker compose -f infra/docker-compose.yml logs spark | tail -50
 ```
 
-El script usa la API oficial `kaggle` y guardará `heart.csv` dentro de la carpeta `data/`.
-
-Si prefieres usar la CLI directamente:
-
+### No hay datos en MongoDB
 ```bash
-# descarga directa con la CLI de Kaggle
-kaggle datasets download -d fedesoriano/heart-failure-prediction -p data/ --unzip
+# Verificar que el producer está publicando
+docker compose -f infra/docker-compose.yml logs producer | head -20
+
+# Verificar que Spark está leyendo
+docker compose -f infra/docker-compose.yml logs spark | grep "Batch"
 ```
+
+### Error de conexión a Kafka
+```bash
+# El nombre del contenedor puede variar, revisar:
+docker ps
+
+# Ajustar variables de entorno en docker-compose.yml si es necesario
+```
+
+### Dataset no encontrado
+```bash
+# Verificar que el archivo existe
+ls -la data/heart.csv
+
+# Si no existe, seguir Paso 1 de la guía rápida
+```
+
+---
+
+## 9. Próximos pasos (mejoras futuras)
+
+- [ ] Agregar autenticación a la API (JWT)
+- [ ] CI/CD con Jenkins (Jenkinsfile ya existe)
+- [ ] Alertas en tiempo real (webhook/email)
+- [ ] Dashboard web integrado (vs Power BI externo)
+- [ ] Versionado del modelo ML con MLflow
+- [ ] Tests automatizados (pytest)
+- [ ] Métricas Prometheus para monitoreo
+
+---
+
+## 📞 Contacto y referencias
+
+- **Institución:** Institución Universitaria de Envigado
+- **Curso:** Big Data - 2026-1
+- **Dataset:** [Kaggle - Heart Failure Prediction](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction)
+- **Tecnologías:** Kafka, Spark, MongoDB, Flask, Power BI
