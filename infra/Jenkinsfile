@@ -1,4 +1,4 @@
-// SentimentStream - Pipeline básico de Jenkins
+// KafkaMed - Pipeline básico de Jenkins
 // Construye los servicios definidos en docker-compose y los levanta.
 
 pipeline {
@@ -19,10 +19,12 @@ pipeline {
         stage('Validar estructura') {
             steps {
                 sh 'ls -la'
-                sh 'test -f data/dataset_sentimientos_500.csv'
-                sh 'test -f spark/streaming_pipeline.py'
+                sh 'test -f data/heart.csv'
+                sh 'test -f spark/consumer_spark.py'
+                sh 'test -f producer/producer.py'
                 sh 'test -f api/app.py'
                 sh 'test -f ${COMPOSE_FILE}'
+                sh 'test -f README.md'
             }
         }
 

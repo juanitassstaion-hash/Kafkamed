@@ -114,6 +114,8 @@ services:
       CHECKPOINT_DIR: /app/data/checkpoint
     volumes:
       - ../data:/app/data
+      - ../docs:/app/docs
+
     command: >
       /opt/spark/bin/spark-submit --master local[2] --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0,org.mongodb.spark:mongo-spark-connector_2.12:10.3.0 consumer_spark.py
 
@@ -134,7 +136,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./data:/app/data:ro
+      - ../data:/app/data:ro
 
 # ── Volúmenes persistentes ─────────────────────────────────────────────────
 volumes:
